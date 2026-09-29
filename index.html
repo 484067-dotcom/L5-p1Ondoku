@@ -19,8 +19,24 @@
 <div class="nav"><button class="btn" id="prevBtn">← 前の文</button><button class="btn" id="nextBtn">次の文 →</button></div>
 <div class="setting"><div class="labelrow"><strong>読み上げスピード</strong><span id="rateValue">0.90×</span></div><input id="rate" type="range" min="0.5" max="1.5" step="0.05" value="0.9"><div class="speed-presets"><button class="btn speed-btn" data-rate="0.75">0.75×</button><button class="btn speed-btn" data-rate="1.00">1.00×</button><button class="btn speed-btn" data-rate="1.25">1.25×</button></div></div>
 <div class="setting"><strong>英語音声</strong><select id="voiceSelect"></select></div>
-<div class="checker"><strong>読み間違い・読み飛ばしチェック</strong><div class="status" id="checkStatus">「読み取りチェック開始」を押して、この文を読んでください。</div><button class="btn check" id="checkBtn" style="width:100%;margin-top:8px">🎤 読み取りチェック開始</button><div id="checkOutput" hidden><div class="check-result" id="diffResult"></div><div class="score" id="scoreResult"></div><div class="status" id="transcriptResult"></div><div class="legend"><span class="word-ok">緑</span>＝一致　<span class="word-miss">赤</span>＝読み飛ばし候補　<span class="word-sub">黄</span>＝別の語として認識　<span class="word-extra">灰</span>＝余分に認識</div><div class="note">※発音そのものの採点ではなく、音声認識結果と教科書本文を比較する簡易チェックです。</div></div></div>
-<div class="recording-area"><strong>自分の録音</strong><div class="status" id="status">「録音開始」を押して英文を読んでください。</div><audio id="audioPlayback" controls hidden></audio><div class="adopt-actions"><button class="btn good" id="acceptRecordingBtn" disabled>★ この録音を採用</button><button class="btn warn" id="removeAcceptedBtn" disabled>採用を解除</button></div><div class="saved-status" id="savedStatus"></div></div>
+<div class="checker">
+      <strong>自動チェック結果</strong>
+      <div class="status" id="checkStatus">録音を停止すると、自動でチェック結果が表示されます。</div>
+      <div id="checkOutput" hidden>
+        <div class="check-result" id="diffResult"></div>
+        <div class="score" id="scoreResult"></div>
+        <div class="transcript" id="transcriptResult"></div>
+        <div class="legend">
+          <span class="word-ok">緑</span>＝一致　
+          <span class="word-miss">赤</span>＝読み飛ばしの可能性　
+          <span class="word-sub">黄</span>＝違って認識された可能性　
+          <span class="word-extra">灰</span>＝余分に認識された語
+        </div>
+        <div class="note">※発音の厳密な採点ではなく、ブラウザの音声認識結果と本文を比較する簡易チェックです。</div>
+      </div>
+    </div>
+
+    <div class="recording-area"><strong>自分の録音</strong><div class="status" id="status">「録音開始」を押して英文を読んでください。</div><audio id="audioPlayback" controls hidden></audio><div class="adopt-actions"><button class="btn good" id="acceptRecordingBtn" disabled>★ この録音を採用</button><button class="btn warn" id="removeAcceptedBtn" disabled>採用を解除</button></div><div class="saved-status" id="savedStatus"></div></div>
 </section>
 <section class="card"><div class="submission-box"><strong>提出用音声</strong><div class="status" id="submissionStatus">まだ採用済みの文はありません。</div><div class="submission-actions"><button class="btn primary" id="makeSubmissionBtn" disabled>🎧 採用した文だけで音声を作る</button><button class="btn good" id="shareSubmissionBtn" disabled>共有 / ロイロへ送る</button></div><audio id="submissionPlayback" controls hidden></audio><a id="downloadSubmission" class="btn good" style="display:none;text-decoration:none;text-align:center;margin-top:10px">⬇ 提出用音声を保存</a><div class="note">全部そろっていなくても、採用済みの文だけを文番号順につないで提出できます。</div></div></section>
 <section class="card"><strong>全文から文を選ぶ</strong><div class="sentence-list" id="sentenceList" style="margin-top:12px"></div></section>
@@ -33,17 +49,181 @@ function esc(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt
 function words(t){return t.toLowerCase().replace(/[’‘]/g,"'").replace(/[^a-z0-9'\s-]/g,' ').replace(/\s+/g,' ').trim().split(' ').filter(Boolean)}
 function align(a,b){a=words(a);b=words(b);const n=a.length,m=b.length,dp=Array.from({length:n+1},()=>Array(m+1).fill(0)),op=Array.from({length:n+1},()=>Array(m+1));for(let i=1;i<=n;i++){dp[i][0]=i;op[i][0]='del'}for(let j=1;j<=m;j++){dp[0][j]=j;op[0][j]='ins'}for(let i=1;i<=n;i++)for(let j=1;j<=m;j++){if(a[i-1]===b[j-1]){dp[i][j]=dp[i-1][j-1];op[i][j]='ok'}else{let s=dp[i-1][j-1]+1,d=dp[i-1][j]+1,k=dp[i][j-1]+1,v=Math.min(s,d,k);dp[i][j]=v;op[i][j]=v===s?'sub':v===d?'del':'ins'}}let i=n,j=m,r=[];while(i||j){let o=op[i][j];if(o==='ok'){r.push({t:'ok',a:a[i-1],b:b[j-1]});i--;j--}else if(o==='sub'){r.push({t:'sub',a:a[i-1],b:b[j-1]});i--;j--}else if(o==='del'){r.push({t:'del',a:a[i-1]});i--}else{r.push({t:'ins',b:b[j-1]});j--}}r.reverse();return {r,d:dp[n][m],n}}
 function showDiff(target,heard){const x=align(target,heard);diffResult.innerHTML=x.r.map(v=>v.t==='ok'?`<span class="word-ok">${esc(v.a)}</span>`:v.t==='del'?`<span class="word-miss">${esc(v.a)}</span>`:v.t==='sub'?`<span class="word-sub">${esc(v.a)} → ${esc(v.b)}</span>`:`<span class="word-extra">+ ${esc(v.b)}</span>`).join(' ');scoreResult.textContent=`一致度の目安：${Math.max(0,Math.round((1-x.d/Math.max(1,x.n))*100))}%`;transcriptResult.innerHTML=`音声認識結果：<strong>${esc(heard)}</strong>`;checkOutput.hidden=false}
-function startRecognition(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){checkStatus.textContent='このブラウザでは音声認識チェックを利用できません。録音・提出機能は使えます。';return}const r=new R();r.lang='en-US';r.interimResults=false;r.continuous=false;checkOutput.hidden=true;checkStatus.textContent='🎤 聞き取り中です。この英文を読んでください…';checkStatus.classList.add('live');$('checkBtn').disabled=true;r.onresult=e=>{const h=e.results[0][0].transcript;showDiff(sentences[index],h);checkStatus.textContent='チェックしました。色の付いた語を確認してください。'};r.onerror=e=>{checkStatus.textContent=e.error==='not-allowed'?'マイクの許可が必要です。':'うまく認識できませんでした。もう一度試してください。'};r.onend=()=>{$('checkBtn').disabled=false;checkStatus.classList.remove('live')};r.start()}
+
+let liveRecognition=null;
+let liveTranscript="";
+
+function createRecognition(){
+  const R=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!R) return null;
+  const r=new R();
+  r.lang='en-US';
+  r.interimResults=true;
+  r.continuous=true;
+  r.maxAlternatives=1;
+  liveTranscript="";
+  r.onresult=e=>{
+    let t="";
+    for(let i=0;i<e.results.length;i++){
+      t+=e.results[i][0].transcript+" ";
+    }
+    liveTranscript=t.trim();
+  };
+  r.onerror=e=>{
+    if(e.error!=='aborted'){
+      checkStatus.textContent='音声認識がうまく動きませんでした。録音はそのまま確認できます。';
+    }
+  };
+  return r;
+}
+
+function showAutomaticScore(){
+  if(liveTranscript){
+    showDiff(sentences[index],liveTranscript);
+    checkStatus.textContent='自動チェックが完了しました。結果を確認してください。';
+  }else{
+    checkOutput.hidden=true;
+    checkStatus.textContent='音声をうまく認識できませんでした。必要なら「もう一度録音」を押してください。';
+  }
+}
+
 function loadVoices(){const vs=speechSynthesis.getVoices(),list=vs.filter(v=>/^en(-|_)/i.test(v.lang));voiceSelect.innerHTML='';(list.length?list:vs).forEach(v=>{const o=document.createElement('option');o.value=v.name;o.textContent=`${v.name} (${v.lang})`;voiceSelect.appendChild(o)})}
 function speak(){speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(sentences[index]);const v=speechSynthesis.getVoices().find(x=>x.name===voiceSelect.value);if(v)u.voice=v;u.lang=v?.lang||'en-US';u.rate=parseFloat(rate.value);speechSynthesis.speak(u)}
-async function startRecording(){try{const s=await navigator.mediaDevices.getUserMedia({audio:true});currentStream=s;chunks=[];let opts={};const p=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(t=>MediaRecorder.isTypeSupported?.(t));if(p)opts.mimeType=p;mediaRecorder=new MediaRecorder(s,opts);mediaRecorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};mediaRecorder.onstop=()=>{const blob=new Blob(chunks,{type:mediaRecorder.mimeType||'audio/webm'});const old=recordings.get(index);if(old)URL.revokeObjectURL(old.url);recordings.set(index,{blob,url:URL.createObjectURL(blob)});currentStream.getTracks().forEach(t=>t.stop());$('recordBtn').disabled=false;$('stopRecordBtn').disabled=true;renderRecording()};mediaRecorder.start();$('recordBtn').disabled=true;$('stopRecordBtn').disabled=false;statusEl.textContent='● 録音中…';statusEl.classList.add('live')}catch(e){statusEl.textContent='マイクを使用できませんでした。'}}
-function renderRecording(){const r=recordings.get(index),a=acceptedRecordings.has(index);if(r){audioPlayback.src=r.url;audioPlayback.hidden=false;$('acceptRecordingBtn').disabled=false;statusEl.textContent='録音できました。良ければ採用してください。'}else{audioPlayback.hidden=true;$('acceptRecordingBtn').disabled=true;statusEl.textContent=a?'この文は採用済みです。必要なら録り直せます。':'「録音開始」を押して英文を読んでください。'}$('removeAcceptedBtn').disabled=!a;$('savedStatus').textContent=a?`✓ Sentence ${index+1} は採用済みです。`:'';statusEl.classList.remove('live')}
-function renderList(){const box=$('sentenceList');box.innerHTML='';sentences.forEach((s,i)=>{const b=document.createElement('button');b.className='sentence-item'+(i===index?' active':'')+(acceptedRecordings.has(i)?' saved':'');b.innerHTML=`<span class="num">${i+1}.</span>${s}${acceptedRecordings.has(i)?'<span class="savedmark">✓ 採用済み</span>':''}`;b.onclick=()=>{index=i;render()};box.appendChild(b)})}
-function render(){sentenceEl.textContent=sentences[index];translationEl.textContent=translations[index];counterEl.textContent=`Sentence ${index+1} / ${sentences.length}`;progressBar.style.width=`${(index+1)/sentences.length*100}%`;$('prevBtn').disabled=index===0;$('nextBtn').disabled=index===sentences.length-1;checkOutput.hidden=true;checkStatus.textContent='「読み取りチェック開始」を押して、この文を読んでください。';renderRecording();renderList();updateSubmission()}
+
+async function startRecording(){
+  try{
+    speechSynthesis.cancel();
+    checkOutput.hidden=true;
+    checkStatus.textContent='録音中です。停止すると自動でチェックします。';
+
+    const s=await navigator.mediaDevices.getUserMedia({audio:true});
+    currentStream=s;
+    chunks=[];
+
+    let opts={};
+    const p=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(t=>MediaRecorder.isTypeSupported?.(t));
+    if(p) opts.mimeType=p;
+
+    mediaRecorder=new MediaRecorder(s,opts);
+
+    liveRecognition=createRecognition();
+    if(liveRecognition){
+      try{ liveRecognition.start(); }catch(e){}
+    }
+
+    mediaRecorder.ondataavailable=e=>{
+      if(e.data.size) chunks.push(e.data);
+    };
+
+    mediaRecorder.onstop=()=>{
+      const blob=new Blob(chunks,{type:mediaRecorder.mimeType||'audio/webm'});
+      const old=recordings.get(index);
+      if(old) URL.revokeObjectURL(old.url);
+      recordings.set(index,{blob,url:URL.createObjectURL(blob)});
+
+      currentStream?.getTracks().forEach(t=>t.stop());
+      currentStream=null;
+
+      $('recordBtn').disabled=false;
+      $('stopRecordBtn').disabled=true;
+
+      setTimeout(()=>{
+        showAutomaticScore();
+        renderRecording();
+      },350);
+    };
+
+    mediaRecorder.start();
+    $('recordBtn').disabled=true;
+    $('stopRecordBtn').disabled=false;
+    statusEl.textContent='● 録音中… 英文を読んでください。';
+    statusEl.classList.add('live');
+  }catch(e){
+    statusEl.textContent='マイクを使用できませんでした。';
+  }
+}
+
+function stopRecording(){
+  if(mediaRecorder?.state==='recording') mediaRecorder.stop();
+  if(liveRecognition){
+    try{ liveRecognition.stop(); }catch(e){}
+    liveRecognition=null;
+  }
+}
+
+function renderRecording(){
+  const r=recordings.get(index),a=acceptedRecordings.has(index);
+  if(r){
+    audioPlayback.src=r.url;
+    audioPlayback.hidden=false;
+    $('acceptRecordingBtn').disabled=false;
+    $('retryRecordingBtn').disabled=false;
+    statusEl.textContent='録音できました。自動チェック結果を確認してください。';
+  }else{
+    audioPlayback.hidden=true;
+    $('acceptRecordingBtn').disabled=true;
+    $('retryRecordingBtn').disabled=true;
+    statusEl.textContent=a?'この文は保存済みです。必要ならもう一度録音できます。':'「録音開始」を押して英文を読んでください。';
+  }
+  $('savedStatus').textContent=a?`✓ Sentence ${index+1} は保存済みです。`:'';
+  statusEl.classList.remove('live');
+}
+
+function retryCurrent(){
+  const old=recordings.get(index);
+  if(old) URL.revokeObjectURL(old.url);
+  recordings.delete(index);
+  checkOutput.hidden=true;
+  checkStatus.textContent='もう一度「録音開始」を押して読んでください。';
+  renderRecording();
+}
+
+function saveAndNext(){
+  const r=recordings.get(index);
+  if(!r) return;
+  acceptedRecordings.set(index,r.blob);
+
+  if(index<sentences.length-1){
+    index++;
+    render();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }else{
+    render();
+    statusEl.textContent='最後の文まで保存しました。提出用音声を作成できます。';
+  }
+}
+
+function renderList(){const box=$('sentenceList');box.innerHTML='';sentences.forEach((s,i)=>{const b=document.createElement('button');b.className='sentence-item'+(i===index?' active':'')+(acceptedRecordings.has(i)?' saved':'');b.innerHTML=`<span class="num">${i+1}.</span>${s}${acceptedRecordings.has(i)?'<span class="savedmark">✓ 保存済み</span>':''}`;b.onclick=()=>{index=i;render()};box.appendChild(b)})}
+
+function render(){
+  sentenceEl.textContent=sentences[index];
+  translationEl.textContent=translations[index];
+  counterEl.textContent=`Sentence ${index+1} / ${sentences.length}`;
+  progressBar.style.width=`${(index+1)/sentences.length*100}%`;
+  $('prevBtn').disabled=index===0;
+  $('nextBtn').disabled=index===sentences.length-1;
+  checkOutput.hidden=true;
+  checkStatus.textContent='録音を停止すると、自動でチェック結果が表示されます。';
+  renderRecording();
+  renderList();
+  updateSubmission();
+}
+
 function updateSubmission(){const ids=[...acceptedRecordings.keys()].sort((a,b)=>a-b);$('submissionStatus').textContent=ids.length?`採用済み：${ids.map(i=>'Sentence '+(i+1)).join(' / ')}`:'まだ採用済みの文はありません。';$('makeSubmissionBtn').disabled=!ids.length}
 function mono(b,sr=44100){const len=Math.round(b.duration*sr),o=new Float32Array(len),ratio=b.sampleRate/sr,chs=Array.from({length:b.numberOfChannels},(_,c)=>b.getChannelData(c));for(let i=0;i<len;i++){const p=i*ratio,j=Math.floor(p),k=Math.min(j+1,b.length-1),f=p-j;o[i]=chs.reduce((z,ch)=>z+(ch[j]||0)+((ch[k]||0)-(ch[j]||0))*f,0)/chs.length}return o}
 function wav(samples,sr=44100){const ab=new ArrayBuffer(44+samples.length*2),v=new DataView(ab),w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));w(0,'RIFF');v.setUint32(4,36+samples.length*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,samples.length*2,true);let o=44;for(const x of samples){const s=Math.max(-1,Math.min(1,x));v.setInt16(o,s<0?s*32768:s*32767,true);o+=2}return new Blob([v],{type:'audio/wav'})}
 async function makeSubmission(){const ids=[...acceptedRecordings.keys()].sort((a,b)=>a-b),AC=window.AudioContext||window.webkitAudioContext,ctx=new AC(),parts=[];for(const i of ids){const buf=await acceptedRecordings.get(i).arrayBuffer();parts.push(mono(await ctx.decodeAudioData(buf.slice(0))))}await ctx.close();const gap=Math.round(44100*.4),total=parts.reduce((s,p)=>s+p.length,0)+gap*Math.max(0,parts.length-1),all=new Float32Array(total);let pos=0;parts.forEach((p,n)=>{all.set(p,pos);pos+=p.length;if(n<parts.length-1)pos+=gap});submissionBlob=wav(all);if(submissionUrl)URL.revokeObjectURL(submissionUrl);submissionUrl=URL.createObjectURL(submissionBlob);$('submissionPlayback').src=submissionUrl;$('submissionPlayback').hidden=false;const a=$('downloadSubmission');a.href=submissionUrl;a.download='Lesson5_Part1_Submission.wav';a.style.display='block';$('shareSubmissionBtn').disabled=false}
 async function shareSubmission(){if(!submissionBlob)return;const f=new File([submissionBlob],'Lesson5_Part1_Submission.wav',{type:'audio/wav'});if(navigator.share&&navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:'LESSON 5 Part 1'});return}catch(e){}}$('downloadSubmission').click()}
-$('checkBtn').onclick=startRecognition;$('speakBtn').onclick=speak;$('stopSpeakBtn').onclick=()=>speechSynthesis.cancel();$('recordBtn').onclick=startRecording;$('stopRecordBtn').onclick=()=>mediaRecorder?.stop();$('acceptRecordingBtn').onclick=()=>{const r=recordings.get(index);if(r){acceptedRecordings.set(index,r.blob);render()}};$('removeAcceptedBtn').onclick=()=>{acceptedRecordings.delete(index);render()};$('prevBtn').onclick=()=>{if(index>0){index--;render()}};$('nextBtn').onclick=()=>{if(index<sentences.length-1){index++;render()}};$('resetBtn').onclick=()=>{index=0;render()};$('makeSubmissionBtn').onclick=makeSubmission;$('shareSubmissionBtn').onclick=shareSubmission;rate.oninput=()=>rateValue.textContent=parseFloat(rate.value).toFixed(2)+'×';document.querySelectorAll('.speed-btn').forEach(b=>b.onclick=()=>{rate.value=b.dataset.rate;rate.oninput()});loadVoices();speechSynthesis.onvoiceschanged=loadVoices;render();
+$('speakBtn').onclick=speak;
+$('stopSpeakBtn').onclick=()=>speechSynthesis.cancel();
+$('recordBtn').onclick=startRecording;
+$('stopRecordBtn').onclick=stopRecording;
+$('acceptRecordingBtn').onclick=saveAndNext;
+$('retryRecordingBtn').onclick=retryCurrent;
+$('prevBtn').onclick=()=>{if(index>0){index--;render()}};
+$('nextBtn').onclick=()=>{if(index<sentences.length-1){index++;render()}};
+$('resetBtn').onclick=()=>{index=0;render()};
+$('makeSubmissionBtn').onclick=makeSubmission;
+$('shareSubmissionBtn').onclick=shareSubmission;
+rate.oninput=()=>rateValue.textContent=parseFloat(rate.value).toFixed(2)+'×';document.querySelectorAll('.speed-btn').forEach(b=>b.onclick=()=>{rate.value=b.dataset.rate;rate.oninput()});loadVoices();speechSynthesis.onvoiceschanged=loadVoices;render();
 </script></body></html>
